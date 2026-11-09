@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Simon Says — Motion Edition</title>
+  <style>
+    * { box-sizing: border-box; font-family: 'Arial Rounded MT Bold', sans-serif; margin: 0; padding: 0; }
+    body { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 20px; color: white; }
+    h1 { font-size: 2rem; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
+    .subtitle { margin-bottom: 15px; opacity: 0.9; text-align: center; }
+    
+    .camera-wrap { position: relative; border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.25); margin-bottom: 20px; }
+    video, canvas { width: 100%; max-width: 480px; display: block; transform: scaleX(-1); }
+    .motion-indicator { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.6); padding: 6px 16px; border-radius: 20px; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+    .motion-bar { width: 80px; height: 8px; background: #444; border-radius: 4px; overflow: hidden; }
+    .motion-fill { height: 100%; width: 0%; background: #22c55e; transition: width 0.15s, background 0.15s; }
+    .motion-fill.warn { background: #eab308; }
+    .motion-fill.alarm { background: #ef4444; }
+    
+    .stats { display: flex; gap: 20px; margin-bottom: 15px; flex-wrap: wrap; justify-content: center; }
+    .stat-box { background: rgba(255,255,255,0.2); padding: 12px 20px; border-radius: 10px; text-align: center; backdrop-filter: blur(10px); }
+    .stat-label { font-size: 0.85rem; opacity: 0.8; }
+    .stat-value { font-size: 1.5rem; font-weight: bold; }
+    
+    .command-box { background: white; color: #333; padding: 25px 20px; border-radius: 14px; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,0.15); margin-bottom: 15px; min-height: 100px; display: flex; align-items: center; justify-content: center; }
+    .command-text { font-size: 1.3rem; font-weight: bold; line-height: 1.5; }
+    .simon-prefix { color: #22c55e; }
+    .warning-text { color: #ef4444; }
+    
+    .lives { display: flex; gap: 6px; justify-content: center; margin-bottom: 15px; font-size: 1.6rem; }
+    button { padding: 14px 32px; font-size: 1.1rem; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; transition: all 0.2s; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-small { padding: 8px 16px; font-size: 0.9rem; background: rgba(255,255,255,0.25); color: white; margin: 0 5px; }
+    
+    .feedback { font-size: 1.2rem; font-weight: bold; height: 36px; margin: 10px 0; }
+    .feedback.correct { color: #d1fae5; }
+    .feedback.wrong { color: #fecaca; }
+    
+    .controls-box { background: rgba(255,255,255,0.15); padding: 15px; border-radius: 10px; max-width: 480px; width: 100%; margin-bottom: 15px; }
+    .control-row { display: flex; justify-content: space-between; align-items: center; margin: 8px 0; }
+    input[type="range"] { width: 120px; }
+    select { padding: 6px 10px; border-radius: 6px; border: none; font-size: 0.9rem; }
+    
+    .instructions { background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; max-width: 480px; font-size: 0.9rem; line-height: 1.6; margin-top: 10px; }
+    .status { font-size: 0.85rem; opacity: 0.75; margin-top: 8px; }
+  </style>
+</head>
+<body>
+
+  <h1>🗣️ Simon Says — Motion Edition</h1>
+  <p class="subtitle">Step back so your upper body is visible. Stand still when Simon doesn't say! 🧍</p>
+
+  <div class="camera-wrap">
+    <video id="video" autoplay muted playsinline></video>
+    <canvas id="canvas" style="display: none;"></canvas>
+    <div class="motion-indicator">
+      <span>Motion:</span>
+      <div class="motion-bar"><div class="motion-fill" id="motionFill"></div></div>
+      <span id="motionLevel">—</span>
+    </div>
+  </div>
+
+  <div class="controls-box">
+    <div class="control-row">
+      <label>🎯 Sensitivity</label>
+      <input type="range" id="sensitivity" min="5" max="40" value="20">
+    </div>
+    <div class="control-row">
+      <label>⏱️ Time Limit</label>
+      <select id="timeLimit">
+        <option value="4000">Easy (4s)</option>
+        <option value="3000" selected>Normal (3s)</option>
+        <option value="2000">Hard (2s)</option>
+        <option value="1500">Insane (1.5s)</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="lives" id="lives">❤️ ❤️ ❤️</div>
+
+  <div class="stats">
+    <div class="stat-box">
+      <div class="stat-label">Score</div>
+      <div class="stat-value" id="score">0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Streak</div>
+      <div class="stat-value" id="streak">0</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-label">Best</div>
+      <div class="stat-value" id="best">0</div>
+    </div>
+  </div>
+
+  <div class="command-box">
+    <p class="command-text" id="commandText">📷 Click Start to begin — allow camera access when prompted!</p>
+  </div>
+
+  <button class="btn-primary" id="startBtn">▶ Start Game</button>
+  <div class="status" id="camStatus"></div>
+
+  <div class="feedback" id="feedback"></div>
+
+  <div class="instructions">
+    <strong>📜 How to Play:</strong><br>
+    ✅ <strong>"Simon says..."</strong> → Do the action! Move your body/hands as shown<br>
+    ❌ <strong>No "Simon says"</strong> → Stay COMPLETELY still! Even small movements count<br>
+    ⚠️ 3 mistakes = Game Over. The better you do, the trickier it gets! 🏆<br><br>
+    <em>💡 Tip: Adjust the Sensitivity slider if it's too sensitive or not sensitive enough</em>
+  </div>
+
+  <script>
+    // ─── COMMANDS ───
+    const ALL_COMMANDS = [
+      { text: "raise your hands up", hasSimon: true, emoji: "🙌" },
+      { text: "touch your head", hasSimon: true, emoji: "🙆" },
+      { text: "clap your hands", hasSimon: true, emoji: "👏" },
+      { text: "wave your hand", hasSimon: true, emoji: "👋" },
+      { text: "stretch your arms out", hasSimon: true, emoji: "🤸" },
+      { text: "touch your shoulders", hasSimon: true, emoji: "🤷" },
+      { text: "put hands on hips", hasSimon: true, emoji: "💃" },
+      { text: "cover your eyes", hasSimon: true, emoji: "🙈" },
+      { text: "bend your knees", hasSimon: true, emoji: "🦵" },
+      { text: "reach to the sky", hasSimon: true, emoji: "⬆️" },
+      { text: "touch your nose", hasSimon: false, emoji: "👃" },
+      { text: "turn around", hasSimon: false, emoji: "🔄" },
+      { text: "jump", hasSimon: false, emoji: "🦘" },
+      { text: "shake your hands", hasSimon: false, emoji: "🤝" },
+      { text: "lean to the side", hasSimon: false, emoji: "👉" },
+      { text: "nod your head", hasSimon: false, emoji: "🙂" },
+      { text: "blink your eyes", hasSimon: false, emoji: "👀" },
+      { text: "stomp your foot", hasSimon: false, emoji: "🦶" },
+    ];
+
+    // ─── GAME STATE ───
+    let score = 0, streak = 0, bestScore = parseInt(localStorage.getItem('simonMotionBest') || '0');
+    let lives = 3, isPlaying = false, currentCommand = null;
+    let timerId = null, nextRoundId = null, roundNumber = 0, baselineFrame = null;
+    let motionDetected = false;
+    let cameraReady = false;
+
+    // ─── CAMERA & DETECTION ───
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    let videoWidth = 0, videoHeight = 0;
+    let animationId = null;
+
+    // Thresholds — adjusted by slider
+    let SENSITIVITY_THRESHOLD = 20;        // Pixel difference threshold (0-255)
+    let MOTION_PCT_TRIGGER = 0.015;        // % of frame changed = motion detected
+
+    // DOM Elements
+    const commandText = document.getElementById('commandText');
+    const scoreEl = document.getElementById('score');
+    const streakEl = document.getElementById('streak');
+    const bestEl = document.getElementById('best');
+    const livesEl = document.getElementById('lives');
+    const feedbackEl = document.getElementById('feedback');
+    const startBtn = document.getElementById('startBtn');
+    const motionFill = document.getElementById('motionFill');
+    const motionLevelEl = document.getElementById('motionLevel');
+    const sensitivitySlider = document.getElementById('sensitivity');
+    const timeSelect = document.getElementById('timeLimit');
+    const camStatus = document.getElementById('camStatus');
+
+    bestEl.textContent = bestScore;
+
+    // ─── CAMERA INIT ───
+    async function initCamera() {
+      if (cameraReady) return true;
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error('Camera access is not supported by this browser.');
+        }
+        camStatus.textContent = "📷 Requesting camera...";
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" } 
+        });
+        video.srcObject = stream;
+        await video.play();
+        videoWidth = video.videoWidth;
+        videoHeight = video.videoHeight;
+        if (!videoWidth || !videoHeight) throw new Error('Camera did not provide a video frame.');
+        canvas.width = videoWidth;
+        canvas.height = videoHeight;
+        captureBaseline();
+        cameraReady = true;
+        camStatus.textContent = "✅ Camera ready";
+        startMotionLoop();
+        return true;
+      } catch (err) {
+        const messages = {
+          NotAllowedError: 'Camera blocked. Allow camera access in browser/site settings, and check that this page is using HTTPS or localhost.',
+          SecurityError: 'Camera access requires a secure page (HTTPS or localhost).',
+          NotFoundError: 'No camera was found. Connect or enable a camera, then try again.',
+          NotReadableError: 'The camera is unavailable. Close other apps or tabs using it, then try again.',
+          OverconstrainedError: 'The selected camera does not support the requested settings.'
+        };
+        camStatus.textContent = `❌ ${messages[err.name] || `Could not start camera: ${err.message || err.name}`}`;
+        console.error('Camera error:', err);
+        return false;
+      }
+    }
+
+    // ─── MOTION DETECTION ───
+    function captureBaseline() {
+      ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+      baselineFrame = ctx.getImageData(0, 0, videoWidth, videoHeight);
+    }
+
+    function getMotionLevel() {
+      if (!baselineFrame) return 0;
+      
+      ctx.drawImage(video, 0, 0, videoWidth, videoHeight);
+      const currentFrame = ctx.getImageData(0, 0, videoWidth, videoHeight);
+      const baseline = baselineFrame.data;
+      const current = currentFrame.data;
+      
+      let changedPixels = 0;
+      const totalPixels = videoWidth * videoHeight;
+      
+      // Sample every 4th pixel for performance
+      for (let i = 0; i < current.length; i += 16) {
+        // Simple grayscale difference
+        const grayCurr = (current[i] + current[i+1] + current[i+2]) / 3;
+        const grayBase = (baseline[i] + baseline[i+1] + baseline[i+2]) / 3;
+        if (Math.abs(grayCurr - grayBase) > SENSITIVITY_THRESHOLD) {
+          changedPixels++;
+        }
+      }
+      
+      return changedPixels / (totalPixels / 4);
+    }
+
+    function startMotionLoop() {
+      const checkMotion = () => {
+        const level = getMotionLevel();
+        
+        // Update visual meter
+        const pct = Math.min(level / 0.05, 1) * 100;
+        motionFill.style.width = pct + '%';
+        motionFill.classList.remove('warn', 'alarm');
+        if (pct > 60) motionFill.classList.add('warn');
+        if (pct > 85) motionFill.classList.add('alarm');
+        motionLevelEl.textContent = (pct).toFixed(0) + '%';
+        
+        // Game logic — only check motion during active rounds
+        if (isPlaying && currentCommand) {
+          const motionThreshold = MOTION_PCT_TRIGGER * (SENSITIVITY_THRESHOLD / 20);
+          if (level > motionThreshold) {
+            motionDetected = true;
+          }
+        }
+        
+        animationId = requestAnimationFrame(checkMotion);
+      };
+      checkMotion();
+    }
+
+    // ─── HELPERS ───
+    function shuffle(arr) { return [...arr].sort(() => Math.random() - 0.5); }
+    
+    function updateLivesDisplay() {
+      livesEl.textContent = '❤️'.repeat(lives) + '🖤'.repeat(3 - lives);
+    }
+    
+    function showFeedback(text, isCorrect) {
+      feedbackEl.textContent = text;
+      feedbackEl.className = `feedback ${isCorrect ? 'correct' : 'wrong'}`;
+      setTimeout(() => { feedbackEl.textContent = ''; feedbackEl.className = 'feedback'; }, 1400);
+    }
+
+    // ─── GAME FLOW ───
+    function endGame() {
+      isPlaying = false;
+      clearTimeout(timerId);
+      commandText.innerHTML = `🎯 Game Over!<br>You scored <strong>${score}</strong> points!`;
+      startBtn.disabled = false;
+      startBtn.textContent = '🔄 Play Again';
+      if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('simonMotionBest', bestScore);
+        bestEl.textContent = bestScore;
+        showFeedback('🏆 New High Score!', true);
+      }
+    }
+
+    function showNextCommand() {
+      roundNumber++;
+      motionDetected = false;
+      
+      // Progressively more tricks
+      const pool = roundNumber < 4 
+        ? ALL_COMMANDS.filter(c => c.hasSimon || Math.random() > 0.7)
+        : ALL_COMMANDS;
+      
+      const shuffled = shuffle(pool);
+      currentCommand = shuffled[0];
+      
+      if (currentCommand.hasSimon) {
+        commandText.innerHTML = `<span class="simon-prefix">🗣️ Simon says:</span><br><strong>${currentCommand.emoji} ${currentCommand.text}</strong>`;
+      } else {
+        commandText.innerHTML = `<span class="warning-text">⚠️ Watch out!</span><br><strong>${currentCommand.emoji} ${currentCommand.text}</strong>`;
+      }
+      
+      const timeLimit = Number(timeSelect.value);
+      captureBaseline();
+      timerId = setTimeout(evaluateRound, timeLimit);
+    }
+
+    function evaluateRound() {
+      clearTimeout(timerId);
+      if (!isPlaying || !currentCommand) return;
+
+      const command = currentCommand;
+      const wasMoving = motionDetected;
+      currentCommand = null;
+
+      let correct = false;
+      if (command.hasSimon && wasMoving) {
+        correct = true;
+        showFeedback('✅ Great move!', true);
+      } else if (!command.hasSimon && !wasMoving) {
+        correct = true;
+        showFeedback('✅ Perfect stillness!', true);
+      } else if (command.hasSimon) {
+        showFeedback('❌ Too slow! Move when Simon says!', false);
+      } else {
+        showFeedback('❌ Oops! Simon didn\'t say!', false);
+      }
+
+      if (correct) {
+        score += 10 + Math.floor(streak / 3) * 5;
+        streak++;
+        scoreEl.textContent = score;
+        streakEl.textContent = streak;
+      } else {
+        lives--;
+        streak = 0;
+        streakEl.textContent = streak;
+        updateLivesDisplay();
+        if (lives <= 0) {
+          nextRoundId = setTimeout(endGame, 1200);
+          return;
+        }
+      }
+
+      nextRoundId = setTimeout(showNextCommand, 1200);
+    }
+
+    async function startGame() {
+      if (isPlaying) return;
+      startBtn.disabled = true;
+      const ready = await initCamera();
+      if (!ready) {
+        startBtn.disabled = false;
+        return;
+      }
+
+      clearTimeout(timerId);
+      clearTimeout(nextRoundId);
+      score = 0;
+      streak = 0;
+      lives = 3;
+      roundNumber = 0;
+      currentCommand = null;
+      motionDetected = false;
+      scoreEl.textContent = score;
+      streakEl.textContent = streak;
+      updateLivesDisplay();
+      feedbackEl.textContent = '';
+      feedbackEl.className = 'feedback';
+      isPlaying = true;
+      startBtn.textContent = '🎮 Game in progress';
+      showNextCommand();
+    }
+
+    sensitivitySlider.addEventListener('input', () => {
+      SENSITIVITY_THRESHOLD = Number(sensitivitySlider.value);
+    });
+    startBtn.addEventListener('click', startGame);
+    updateLivesDisplay();
+  </script>
+</body>
+</html>
+      
